@@ -189,13 +189,15 @@ def vtype_inner(ast, funcdefs, btypes={}):
     elif ast['ntype'] == Nodes.FUNC:
         args = [vtype_inner(arg, funcdefs, btypes)[0] for arg in ast['args']]
         intypes = [arg['vtype'] for arg in args]
+        if ast['func'] not in funcdefs:
+            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown func' })
         funcdef = funcdefs[ast['func']]
         if intypes != funcdef['intypes']:
-            raise Exception("Cannot match intypes "+pformat(intypes)+" against funcdef "+pformat(funcdef))
+            return dappend(ast, {'vtype': Types.INVALID, 'error': 'type mismatch' })
         return dappend(ast, {'vtype': funcdef['outtype'], 'args': args}), btypes
     elif ast['ntype'] == Nodes.IDENT:
         if ast['value'] not in btypes:
-            raise Exception("Unknown identifier "+pformat(ast))
+            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown identifier'})
         else:
             return dappend(ast, {'vtype': btypes[ast['value']]}), btypes
     elif ast['ntype'] == Nodes.LET:
@@ -204,7 +206,7 @@ def vtype_inner(ast, funcdefs, btypes={}):
             btypes = dappend(btypes, {binding[0]['value']: vtyped['vtype']})
         typed_arg, _ = vtype_inner(ast['expr'], funcdefs, btypes)
         return dappend(ast, {'vtype': typed_arg['vtype']}), btypes
-    raise Exception("Unkown node type "+pformat(ast))
+    return dappend(ast, {'vtype': Types.INVALID, 'error': 'unkown node type'})
 
 def vtype(ast, funcdefs):
     ast, _ = vtype_inner(ast, funcdefs)
