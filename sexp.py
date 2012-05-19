@@ -72,9 +72,9 @@ class Types:
     INVALID = 'InvalidType'
 
 def num_node(value):
-    return {'ntype': Nodes.NUM, 'value': value}
+    return {'ntype': Nodes.NUM, 'value': int(value)}
 def bool_node(value):
-    return {'ntype': Nodes.BOOL, 'value': value}
+    return {'ntype': Nodes.BOOL, 'value': bool(value)}
 def func_node(func, args):
     return {'ntype': Nodes.FUNC, 'func': func, 'args': args}
 def ident_node(value):
@@ -85,37 +85,37 @@ def invalid_node(children, error):
     return {'ntype': Nodes.INVALID, 'children': children, 'error': error}
 
 def op_add(args): 
-    return num_node(args[0].value + args[1].value)
+    return num_node(args[0]['value'] + args[1]['value'])
 def op_sub(args): 
-    return num_node(args[0].value - args[1].value)
+    return num_node(args[0]['value'] - args[1]['value'])
 def op_mul(args): 
-    return num_node(args[0].value * args[1].value)
+    return num_node(args[0]['value'] * args[1]['value'])
 def op_div(args): 
-    return num_node(args[0].value / args[1].value)
+    return num_node(args[0]['value'] / args[1]['value'])
 def op_mod(args): 
-    return num_node(args[0].value % args[1].value)
+    return num_node(args[0]['value'] % args[1]['value'])
 def op_neg(args):    
-    return num_node(-args[0].value)
+    return num_node(-args[0]['value'])
 def op_not(args):    
-    return bool_node(not args[0].value)
+    return bool_node(not args[0]['value'])
 def op_and(args): 
-    return bool_node(args[0].value and args[1].value)
+    return bool_node(args[0]['value'] and args[1]['value'])
 def op_or(args):  
-    return bool_node(args[0].value or args[1].value)
+    return bool_node(args[0]['value'] or args[1]['value'])
 def op_xor(args):  
-    return bool_node(args[0].value ^ args[1].value)
+    return bool_node(args[0]['value'] ^ args[1]['value'])
 def op_gt(args):  
-    return bool_node(args[0].value > args[1].value)
+    return bool_node(args[0]['value'] > args[1]['value'])
 def op_lt(args):  
-    return bool_node(args[0].value < args[1].value)
+    return bool_node(args[0]['value'] < args[1]['value'])
 def op_eq(args):  
-    return bool_node(args[0].value == args[1].value)
+    return bool_node(args[0]['value'] == args[1]['value'])
 def op_gte(args): 
-    return bool_node(args[0].value >= args[1].value)
+    return bool_node(args[0]['value'] >= args[1]['value'])
 def op_lte(args): 
-    return bool_node(args[0].value <= args[1].value)
+    return bool_node(args[0]['value'] <= args[1]['value'])
 def op_neq(args): 
-    return bool_node(args[0].value != args[1].value)
+    return bool_node(args[0]['value'] != args[1]['value'])
 
 def nary(op, n, intype, outtype = None):
     if outtype is None: outtype = intype
@@ -207,16 +207,30 @@ def vtype_inner(ast, funcdefs, btypes={}):
         for binding in ast['bindings']:
             vtyped, _ = vtype_inner(binding[1], funcdefs, btypes)
             btypes = dappend(btypes, {binding[0]['value']: vtyped['vtype']})
-        typed_arg, _ = vtype_inner(ast['expr'], funcdefs, btypes)
-        return dappend(ast, {'vtype': typed_arg['vtype']}), btypes
+        expr, _ = vtype_inner(ast['expr'], funcdefs, btypes)
+        return dappend(ast, {'vtype': expr['vtype'], 'expr': expr}), btypes
     return dappend(ast, {'vtype': Types.INVALID, 'error': 'unkown node type'}), btypes
 
 def vtype(ast, funcdefs):
     ast, _ = vtype_inner(ast, funcdefs)
     return ast
         
-def interpret(vtyped):
-    return vtyped
+def interpret(ast, funcdefs, bindings={}):
+    if ast['ntype'] == Nodes.INVALID or ast['vtype'] == Types.INVALID:
+        return ast
+    elif ast['ntype'] in [Nodes.NUM, Nodes.BOOL]:
+        return ast
+    elif ast['ntype'] == Nodes.IDENT:
+        for binding in bindings:
+            if ast['value'] == binding[0]['value']:
+                return binding[1]
+    elif ast['ntype'] == Nodes.LET:
+        return interpret(ast['expr'], funcdefs, dappend(bindings, ast['bindings']))
+    elif ast['ntype'] == Nodes.FUNC:
+        newargs = [interpret(arg, funcdefs, bindings) for arg in ast['args']]
+        funcdef = funcdefs[ast['func']]
+        return funcdef['op'](newargs)
+    raise Exception("Should handle all node types")
 
 def execute(prog_str):
     tokens = tokenize(prog_str)
@@ -226,7 +240,7 @@ def execute(prog_str):
     print "\nAST\n", pformat(ast)
     vtyped = vtype(ast, FUNCDEFS)
     print "\nVTYPED\n", pformat(vtyped)
-    return interpret(vtyped)
+    return interpret(vtyped, FUNCDEFS)
 
 if __name__ == "__main__":
     import sys
