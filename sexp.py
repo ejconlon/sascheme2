@@ -64,6 +64,7 @@ class Nodes:
     LET = 'LetNode'
     IDENT = 'IdentNode'
     FUNC = 'FuncNode'
+    INVALID = 'InvalidNode'
 
 class Types:
     NUM = 'NumType'
@@ -80,7 +81,8 @@ def ident_node(value):
     return {'ntype': Nodes.IDENT, 'value': value}
 def let_node(bindings, expr):
     return {'ntype': Nodes.LET, 'bindings': bindings, 'expr': expr}
-
+def invalid_node(children, error):
+    return {'ntype': Nodes.INVALID, 'children': children, 'error': error}
 
 def op_add(args): 
     return num_node(args[0].value + args[1].value)
@@ -163,7 +165,7 @@ def astify(nested):
                 assert is_ident(binding[0])
                 bindings.append((ident_node(binding[0]), astify(binding[1])))                
             return let_node(bindings, astify(nested[2]))
-        else:
+        elif type(nested[0]) != list:
             return func_node(nested[0], [astify(arg) for arg in nested[1:]])
     else:
         if is_int(nested):
@@ -172,7 +174,7 @@ def astify(nested):
             return bool_node(nested)
         elif is_ident(nested):
             return ident_node(nested)
-    raise Exception("Cannot type: "+pformat(nested))
+    return invalid_node(nested, 'cannot type')
 
 def dappend(din, dout):
     for a, b in din.iteritems():
@@ -181,7 +183,7 @@ def dappend(din, dout):
     return dout
 
 def vtype_inner(ast, funcdefs, btypes={}):
-    print "BTYPES", pformat(btypes)
+    #print "BTYPES", pformat(btypes)
     if ast['ntype'] == Nodes.NUM:
         return dappend(ast, {'vtype': Types.NUM}), btypes
     elif ast['ntype'] == Nodes.BOOL:
@@ -189,15 +191,16 @@ def vtype_inner(ast, funcdefs, btypes={}):
     elif ast['ntype'] == Nodes.FUNC:
         args = [vtype_inner(arg, funcdefs, btypes)[0] for arg in ast['args']]
         intypes = [arg['vtype'] for arg in args]
+        print "FUNCNODE", pformat(ast)
         if ast['func'] not in funcdefs:
-            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown func' })
+            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown func' }), btypes
         funcdef = funcdefs[ast['func']]
         if intypes != funcdef['intypes']:
-            return dappend(ast, {'vtype': Types.INVALID, 'error': 'type mismatch' })
+            return dappend(ast, {'vtype': Types.INVALID, 'error': 'type mismatch' }), btypes
         return dappend(ast, {'vtype': funcdef['outtype'], 'args': args}), btypes
     elif ast['ntype'] == Nodes.IDENT:
         if ast['value'] not in btypes:
-            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown identifier'})
+            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown identifier'}), btypes
         else:
             return dappend(ast, {'vtype': btypes[ast['value']]}), btypes
     elif ast['ntype'] == Nodes.LET:
@@ -206,7 +209,7 @@ def vtype_inner(ast, funcdefs, btypes={}):
             btypes = dappend(btypes, {binding[0]['value']: vtyped['vtype']})
         typed_arg, _ = vtype_inner(ast['expr'], funcdefs, btypes)
         return dappend(ast, {'vtype': typed_arg['vtype']}), btypes
-    return dappend(ast, {'vtype': Types.INVALID, 'error': 'unkown node type'})
+    return dappend(ast, {'vtype': Types.INVALID, 'error': 'unkown node type'}), btypes
 
 def vtype(ast, funcdefs):
     ast, _ = vtype_inner(ast, funcdefs)
