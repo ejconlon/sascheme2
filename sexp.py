@@ -61,6 +61,8 @@ def nest(tokens):
 class Nodes:
     NUM = 'NumNode'
     BOOL = 'BoolNode'
+    LET = 'LetNode'
+    IDENT = 'IdentNode'
     FUNC = 'FuncNode'
 
 class Types:
@@ -74,6 +76,11 @@ def bool_node(value):
     return {'ntype': Nodes.BOOL, 'value': value}
 def func_node(func, args):
     return {'ntype': Nodes.FUNC, 'func': func, 'args': args}
+def ident_node(value):
+    return {'ntype': Nodes.IDENT, 'value': value}
+def let_node(bindings, expr):
+    return {'ntype': Nodes.LET, 'bindings': bindings, 'expr': expr}
+
 
 def op_add(args): 
     return num_node(args[0].value + args[1].value)
@@ -139,17 +146,32 @@ def is_blah(x, blah):
         return False
 
 def is_int(x): return is_blah(x, int)
-def is_bool(x): return is_blah(x, bool)
+def is_bool(x): return x.lower() in ['true', 'false']
+def is_ident(x):
+    return len(x) > 0 and not is_int(x) and not is_bool(x)
 
 def astify(nested):
-    pprint(nested)
     if type(nested) == list:
-        return func_node(nested[0], [astify(arg) for arg in nested[1:]])
+        if nested[0] == 'let':
+            assert len(nested) == 3
+            assert len(nested[1]) == 1
+            assert type(nested[1]) == list
+            bindings = []
+            for binding in nested[1]:
+                print "BINDING", binding
+                assert len(binding) == 2 
+                assert is_ident(binding[0])
+                bindings.append((ident_node(binding[0]), astify(binding[1])))                
+            return let_node(bindings, astify(nested[2]))
+        else:
+            return func_node(nested[0], [astify(arg) for arg in nested[1:]])
     else:
         if is_int(nested):
             return num_node(nested)
         elif is_bool(nested):
             return bool_node(nested)
+        elif is_ident(nested):
+            return ident_node(nested)
     raise Exception("Cannot type: "+pformat(nested))
 
 def dappend(din, dout):
@@ -158,31 +180,47 @@ def dappend(din, dout):
             dout[a] = b
     return dout
 
-def vtype(ast, funcdefs):
+def vtype_inner(ast, funcdefs, btypes={}):
+    print "BTYPES", pformat(btypes)
     if ast['ntype'] == Nodes.NUM:
-        return dappend(ast, {'vtype': Types.NUM})
+        return dappend(ast, {'vtype': Types.NUM}), btypes
     elif ast['ntype'] == Nodes.BOOL:
-        return dappend(ast, {'vtype': Types.BOOL})
+        return dappend(ast, {'vtype': Types.BOOL}), btypes
     elif ast['ntype'] == Nodes.FUNC:
-        args = [vtype(arg, funcdefs) for arg in ast['args']]
+        args = [vtype_inner(arg, funcdefs, btypes)[0] for arg in ast['args']]
         intypes = [arg['vtype'] for arg in args]
         funcdef = funcdefs[ast['func']]
         if intypes != funcdef['intypes']:
             raise Exception("Cannot match intypes "+pformat(intypes)+" against funcdef "+pformat(funcdef))
-        return dappend(ast, {'vtype': funcdef['outtype'], 'args': args})
-    else:
-        raise Exception("Unkown node type "+pformat(ast))
+        return dappend(ast, {'vtype': funcdef['outtype'], 'args': args}), btypes
+    elif ast['ntype'] == Nodes.IDENT:
+        if ast['value'] not in btypes:
+            raise Exception("Unknown identifier "+pformat(ast))
+        else:
+            return dappend(ast, {'vtype': btypes[ast['value']]}), btypes
+    elif ast['ntype'] == Nodes.LET:
+        for binding in ast['bindings']:
+            vtyped, _ = vtype_inner(binding[1], funcdefs, btypes)
+            btypes = dappend(btypes, {binding[0]['value']: vtyped['vtype']})
+        typed_arg, _ = vtype_inner(ast['expr'], funcdefs, btypes)
+        return dappend(ast, {'vtype': typed_arg['vtype']}), btypes
+    raise Exception("Unkown node type "+pformat(ast))
+
+def vtype(ast, funcdefs):
+    ast, _ = vtype_inner(ast, funcdefs)
     return ast
         
 def interpret(vtyped):
-    pprint(vtyped)
-    pass
+    return vtyped
 
 def execute(prog_str):
     tokens = tokenize(prog_str)
     nested = nest(tokens)
+    print "\nNESTED\n", pformat(nested)
     ast = astify(nested)
+    print "\nAST\n", pformat(ast)
     vtyped = vtype(ast, FUNCDEFS)
+    print "\nVTYPED\n", pformat(vtyped)
     return interpret(vtyped)
 
 if __name__ == "__main__":
@@ -205,6 +243,5 @@ if __name__ == "__main__":
         sys.exit(-1)
 
     program = program.strip()
-    ret_node = execute(program)
-    print "==="
-    print ret_node
+    interpreted = execute(program)
+    print "\nINTERPRETED\n", pformat(interpreted)    
