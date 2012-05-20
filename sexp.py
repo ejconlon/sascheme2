@@ -63,6 +63,7 @@ class Nodes:
     BOOL = 'BoolNode'
     LET = 'LetNode'
     IDENT = 'IdentNode'
+    DEFINE = 'DefineNode'
     FUNC = 'FuncNode'
     INVALID = 'InvalidNode'
 
@@ -83,6 +84,8 @@ def let_node(bindings, expr):
     return {'ntype': Nodes.LET, 'bindings': bindings, 'expr': expr}
 def invalid_node(children, error):
     return {'ntype': Nodes.INVALID, 'children': children, 'error': error}
+def define_node(func, params, expr):
+    return {'ntype': Nodes.DEFINE, 'func': func, 'params': params, 'expr': expr}
 
 def op_add(args): 
     return num_node(args[0]['value'] + args[1]['value'])
@@ -140,6 +143,25 @@ FUNCDEFS = {
     'neq' : nary(op_neq, 2, Types.NUM, Types.BOOL)
 }
 
+def alias(a, b):
+    FUNCDEFS[a] = FUNCDEFS[b]
+
+alias('+', 'add')
+alias('-', 'sub')
+alias('*', 'mul')
+alias('/', 'div')
+alias('%', 'mod')
+alias('!', 'not')
+alias('&&', 'and')
+alias('||', 'or')
+alias('^', 'xor')
+alias('>', 'gt')
+alias('<', 'lt')
+alias('==', 'eq')
+alias('>=', 'gte')
+alias('<=', 'lte')
+alias('!=', 'neq')
+
 def is_blah(x, blah):
     try:
         y = blah(x)
@@ -165,8 +187,16 @@ def astify(nested):
                 assert is_ident(binding[0])
                 bindings.append((ident_node(binding[0]), astify(binding[1])))                
             return let_node(bindings, astify(nested[2]))
+        elif nested[0] == 'define':
+            assert len(nested) == 3
+            assert len(nested[1]) > 0
+            assert type(nested[1]) == list
+            for x in nested[1]:
+                assert is_ident(x)
+            idents = [ident_node(x) for x in nested[1]]
+            return define_node(idents[0], idents[1:], astify(nested[2]))
         elif type(nested[0]) != list:
-            return func_node(nested[0], [astify(arg) for arg in nested[1:]])
+            return func_node(ident_node(nested[0]), [astify(arg) for arg in nested[1:]])
     else:
         if is_int(nested):
             return num_node(nested)
@@ -192,9 +222,9 @@ def vtype_inner(ast, funcdefs, btypes={}):
         args = [vtype_inner(arg, funcdefs, btypes)[0] for arg in ast['args']]
         intypes = [arg['vtype'] for arg in args]
         print "FUNCNODE", pformat(ast)
-        if ast['func'] not in funcdefs:
+        if ast['func']['value'] not in funcdefs:
             return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown func' }), btypes
-        funcdef = funcdefs[ast['func']]
+        funcdef = funcdefs[ast['func']['value']]
         if intypes != funcdef['intypes']:
             return dappend(ast, {'vtype': Types.INVALID, 'error': 'type mismatch' }), btypes
         return dappend(ast, {'vtype': funcdef['outtype'], 'args': args}), btypes
@@ -209,6 +239,8 @@ def vtype_inner(ast, funcdefs, btypes={}):
             btypes = dappend(btypes, {binding[0]['value']: vtyped['vtype']})
         expr, _ = vtype_inner(ast['expr'], funcdefs, btypes)
         return dappend(ast, {'vtype': expr['vtype'], 'expr': expr}), btypes
+    elif ast['ntype'] == Nodes.DEFINE:
+        pass  # TODO
     return dappend(ast, {'vtype': Types.INVALID, 'error': 'unkown node type'}), btypes
 
 def vtype(ast, funcdefs):
@@ -228,7 +260,7 @@ def interpret(ast, funcdefs, bindings={}):
         return interpret(ast['expr'], funcdefs, dappend(bindings, ast['bindings']))
     elif ast['ntype'] == Nodes.FUNC:
         newargs = [interpret(arg, funcdefs, bindings) for arg in ast['args']]
-        funcdef = funcdefs[ast['func']]
+        funcdef = funcdefs[ast['func']['value']]
         return funcdef['op'](newargs)
     raise Exception("Should handle all node types")
 
