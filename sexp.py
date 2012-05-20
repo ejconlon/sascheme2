@@ -70,6 +70,7 @@ class Nodes:
 class Types:
     NUM = 'NumType'
     BOOL = 'BoolType'
+    VOID = 'VoidType'
     INVALID = 'InvalidType'
 
 def num_node(value):
@@ -212,41 +213,40 @@ def dappend(din, dout):
             dout[a] = b
     return dout
 
-def vtype_inner(ast, funcdefs, btypes={}):
+# return ast typed with 'vtype' (a new copy of it - use dappend)
+# btypes are the types of bound symbols in lets
+def vtype(ast, funcdefs, btypes={}):
     #print "BTYPES", pformat(btypes)
     if ast['ntype'] == Nodes.NUM:
-        return dappend(ast, {'vtype': Types.NUM}), btypes
+        return dappend(ast, {'vtype': Types.NUM})
     elif ast['ntype'] == Nodes.BOOL:
-        return dappend(ast, {'vtype': Types.BOOL}), btypes
+        return dappend(ast, {'vtype': Types.BOOL})
     elif ast['ntype'] == Nodes.FUNC:
-        args = [vtype_inner(arg, funcdefs, btypes)[0] for arg in ast['args']]
+        args = [vtype(arg, funcdefs, btypes) for arg in ast['args']]
         intypes = [arg['vtype'] for arg in args]
         print "FUNCNODE", pformat(ast)
         if ast['func']['value'] not in funcdefs:
-            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown func' }), btypes
+            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown func' })
         funcdef = funcdefs[ast['func']['value']]
         if intypes != funcdef['intypes']:
-            return dappend(ast, {'vtype': Types.INVALID, 'error': 'type mismatch' }), btypes
-        return dappend(ast, {'vtype': funcdef['outtype'], 'args': args}), btypes
+            return dappend(ast, {'vtype': Types.INVALID, 'error': 'type mismatch' })
+        return dappend(ast, {'vtype': funcdef['outtype'], 'args': args})
     elif ast['ntype'] == Nodes.IDENT:
         if ast['value'] not in btypes:
-            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown identifier'}), btypes
+            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown identifier'})
         else:
-            return dappend(ast, {'vtype': btypes[ast['value']]}), btypes
+            return dappend(ast, {'vtype': btypes[ast['value']]})
     elif ast['ntype'] == Nodes.LET:
+        newbtypes = btypes
         for binding in ast['bindings']:
-            vtyped, _ = vtype_inner(binding[1], funcdefs, btypes)
-            btypes = dappend(btypes, {binding[0]['value']: vtyped['vtype']})
-        expr, _ = vtype_inner(ast['expr'], funcdefs, btypes)
-        return dappend(ast, {'vtype': expr['vtype'], 'expr': expr}), btypes
+            vtyped = vtype(binding[1], funcdefs, newbtypes)
+            newbtypes = dappend(newbtypes, {binding[0]['value']: vtyped['vtype']})
+        expr = vtype(ast['expr'], funcdefs, newbtypes)
+        return dappend(ast, {'vtype': expr['vtype'], 'expr': expr})
     elif ast['ntype'] == Nodes.DEFINE:
         pass  # TODO
-    return dappend(ast, {'vtype': Types.INVALID, 'error': 'unkown node type'}), btypes
+    return dappend(ast, {'vtype': Types.INVALID, 'error': 'unkown node type'})
 
-def vtype(ast, funcdefs):
-    ast, _ = vtype_inner(ast, funcdefs)
-    return ast
-        
 def interpret(ast, funcdefs, bindings={}):
     if ast['ntype'] == Nodes.INVALID or ast['vtype'] == Types.INVALID:
         return ast
