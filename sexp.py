@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 from pprint import pprint, pformat
+from stypes import *
+import matcher
 
 def is_open(c): return c in '(['
 def is_close(c): return c in ')]'
@@ -58,36 +60,6 @@ def nest(tokens):
                 break
         except StopIteration:
             break
-
-class Nodes:
-    NUM = 'NumNode'
-    BOOL = 'BoolNode'
-    LET = 'LetNode'
-    IDENT = 'IdentNode'
-    DEFINE = 'DefineNode'
-    FUNC = 'FuncNode'
-    INVALID = 'InvalidNode'
-
-class Types:
-    NUM = 'NumType'
-    BOOL = 'BoolType'
-    VOID = 'VoidType'
-    INVALID = 'InvalidType'
-
-def num_node(value):
-    return {'ntype': Nodes.NUM, 'value': int(value)}
-def bool_node(value):
-    return {'ntype': Nodes.BOOL, 'value': bool(value)}
-def func_node(func, args):
-    return {'ntype': Nodes.FUNC, 'func': func, 'args': args}
-def ident_node(value):
-    return {'ntype': Nodes.IDENT, 'value': value}
-def let_node(bindings, expr):
-    return {'ntype': Nodes.LET, 'bindings': bindings, 'expr': expr}
-def invalid_node(children, error):
-    return {'ntype': Nodes.INVALID, 'children': children, 'error': error}
-def define_node(func, params, expr):
-    return {'ntype': Nodes.DEFINE, 'func': func, 'params': params, 'expr': expr}
 
 def op_add(args): 
     return num_node(args[0]['value'] + args[1]['value'])
@@ -324,7 +296,9 @@ def interpret(ast, funcstack, bindings={}):
     elif ast['ntype'] == Nodes.FUNC:
         newargs = [interpret(arg, funcstack, bindings) for arg in ast['args']]
         funcdef = funcstack[ast['func']['value']]
-        return funcdef['op'](newargs)
+        newast = funcdef['op'](newargs)
+        newast['vtype'] = funcdef['outtype']
+        return newast
     elif ast['ntype'] == Nodes.DEFINE:
         funcdef = funcstack[ast['func']['value']]
         def op(args):
@@ -338,21 +312,32 @@ def interpret(ast, funcstack, bindings={}):
         return ast
     raise Exception("Should handle all node types")
 
+
+PASSES = [
+    ["VTYPE", vtype, matcher.ASTMatchers.vtyped],
+    ["INTERPRET", interpret, matcher.ASTMatchers.interpreted],
+]
+
+
 def execute(prog_str):
     tokens = tokenize(prog_str)
     nested = list(nest(tokens))
-    print "\nNESTED\n", pformat(nested)
     funcstack = FuncStack(BUILTINS)
     for sexp in nested:
         ast = astify(sexp)
-        print "\nAST\n", pformat(ast)
-        vtyped = vtype(ast, funcstack)
-        print "\nFS1\n", funcstack
-        print "\nVTYPED\n", pformat(vtyped)
-        interpreted = interpret(vtyped, funcstack)
-        print "\nFS2\n", funcstack
-        print "\nINTERPRETED\n", pformat(interpreted)
-        yield interpreted, funcstack
+        print "INITIAL", pformat(ast)
+        matched = matcher.ASTMatchers.astified.matches(ast)
+        print "MATCHED?", matched
+        assert matched
+        for p in PASSES:
+            name, func, m = p
+            print "STARTING", name
+            ast = func(ast, funcstack)
+            print "FINISHED", name, pformat(ast)
+            matched = m.matches(ast)
+            print "MATCHED?", matched
+            assert matched
+        yield ast, funcstack
 
 if __name__ == "__main__":
     import sys
