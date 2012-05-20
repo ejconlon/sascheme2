@@ -45,7 +45,8 @@ class ASTMatchers:
     func = ~primitive & equals_('ntype', stypes.Nodes.FUNC) & all_('args', ntyped) & matches_('func', ident)
     let = ~primitive & equals_('ntype', stypes.Nodes.LET) & all_('bindings', lambda x: ident.matches(x[0]) and ntyped.matches(x[1])) and matches_('expr', ntyped)
     define = ~primitive & equals_('ntype', stypes.Nodes.DEFINE) & all_('params', ident) & matches_('func', ident) & matches_('expr', ntyped)
-    invalid_base = has_('error') & typed_('error', str) & typed_('children', list)
+    mif = ~primitive & equals_('ntype', stypes.Nodes.IF) & matches_('testexpr', ntyped) & matches_('trueexpr', ntyped) & matches_('falseexpr', ntyped)
+    invalid_base = has_('error') & typed_('error', str)
     invalid_ntype = invalid_base & equals_('ntype', stypes.Nodes.INVALID) 
     invalid_vtype = invalid_base & equals_('vtype', stypes.Types.INVALID)
     invalid = invalid_ntype | invalid_vtype
@@ -53,7 +54,7 @@ class ASTMatchers:
     vtyped_basic = has_('vtype')
 
     # pass matchers
-    astified = num | mbool | ident | func | let | define
+    astified = num | mbool | ident | func | let | define | mif
     vtyped = astified & vtyped_basic
     interpreted = vtyped & (invalid | primitive | void)
 

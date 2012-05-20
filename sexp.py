@@ -175,6 +175,10 @@ def astify(nested):
                 assert is_ident(x)
             idents = [ident_node(x) for x in nested[1]]
             return define_node(idents[0], idents[1:], astify(nested[2]))
+        elif nested[0] == 'if':
+            assert len(nested) == 4
+            for i in xrange(3): assert len(nested[1+i]) > 0 and type(nested[1+i]) == list
+            return if_node(astify(nested[1]), astify(nested[2]), astify(nested[3]))
         elif type(nested[0]) != list:
             return func_node(ident_node(nested[0]), [astify(arg) for arg in nested[1:]])
     else:
@@ -284,6 +288,16 @@ def vtype(ast, funcstack, btypes={}, propagated_btypes=None):
         newast = dappend(ast, {'intypes': intypes, 'outtype': outtype, 'op': op, 'expr': typedexpr, 'vtype': vt})
         funcstack.define(ast['func']['value'], newast) 
         return newast
+    elif ast['ntype'] == Nodes.IF:
+        typedtest  = vtype(ast['testexpr'], funcstack, btypes)
+        typedtrue  = vtype(ast['trueexpr'], funcstack, btypes)
+        typedfalse = vtype(ast['falseexpr'], funcstack, btypes)
+        if typedtest['vtype'] != Types.BOOL:
+            return dappend(ast, {'vtype': Types.INVALID, 'error': 'test not boolean', 'testexpr': typedtest, 'trueexpr': typedtrue, 'falseexpr': typedfalse})
+        elif typedtrue['vtype'] != typedfalse['vtype']:
+            return dappend(ast, {'vtype': Types.INVALID, 'error': 'test not boolean', 'testexpr': typedtest, 'trueexpr': typedtrue, 'falseexpr': typedfalse})
+        else:
+            return dappend(ast, {'vtype': typedtrue['vtype'], 'testexpr': typedtest, 'trueexpr': typedtrue, 'falseexpr': typedfalse})
     return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown node type'})
 
 def interpret(ast, funcstack, bindings={}):
@@ -316,6 +330,12 @@ def interpret(ast, funcstack, bindings={}):
             return interpret(ast['expr'], funcstack, newbindings)
         funcdef['op'] = op
         return ast
+    elif ast['ntype'] == Nodes.IF:
+        tested = interpret(ast['testexpr'], funcstack, bindings)
+        if tested['value']:
+            return interpret(ast['trueexpr'], funcstack, bindings)
+        else:
+            return interpret(ast['falseexpr'], funcstack, bindings)
     raise Exception("Should handle all node types")
 
 

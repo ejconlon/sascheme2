@@ -4,4 +4,4 @@ Another shot at scheme-in-python.
 
 Based on the "Nanoloop" compiler design - many small passes over an AST with grammars defined before and after each transformation.  In this case, the grammars are really just arbitrarily complicated/stupid matchers with a simple & | ~ expression language.
 
-I haven't even gotten around to "cond" yet, but you can define, let, and, or, add, etc on ints and bools.
+I haven't gotten around to "cond" or "cons" yet, but you can define, let, and, or, add, if, etc on ints and bools.

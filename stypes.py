@@ -4,6 +4,7 @@ class Nodes:
     LET = 'LetNode'
     IDENT = 'IdentNode'
     DEFINE = 'DefineNode'
+    IF = 'IfNode'
     FUNC = 'FuncNode'
     INVALID = 'InvalidNode'
 
@@ -27,4 +28,6 @@ def invalid_node(children, error):
     return {'ntype': Nodes.INVALID, 'children': children, 'error': error}
 def define_node(func, params, expr):
     return {'ntype': Nodes.DEFINE, 'func': func, 'params': params, 'expr': expr}
+def if_node(testexpr, trueexpr, falseexpr):
+    return {'ntype': Nodes.IF, 'testexpr': testexpr, 'trueexpr': trueexpr, 'falseexpr': falseexpr}
 

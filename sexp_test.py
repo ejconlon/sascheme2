@@ -22,7 +22,9 @@ class TestSexp(unittest.TestCase):
         ["(define (double n) (mul 2 n)) (double 3)", [M.void, mnum(6)]],
         ["(idnum 3)", [mnum(3)]],
         ["(idbool #t)", [mbool(True)]],
-        ["(idbool #f)", [mbool(False)]]
+        ["(idbool #f)", [mbool(False)]],
+        ["(if (idbool #t) (idnum 3) (idnum 4))", [mnum(3)]],
+        ["(if (idbool #f) (idnum 3) (idnum 4))", [mnum(4)]]
     ]
 
     def test_cases(self):
