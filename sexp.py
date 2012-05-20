@@ -177,9 +177,8 @@ def astify(nested):
             return define_node(idents[0], idents[1:], astify(nested[2]))
         elif nested[0] == 'if':
             assert len(nested) == 4
-            for i in xrange(3): assert len(nested[1+i]) > 0 and type(nested[1+i]) == list
             return if_node(astify(nested[1]), astify(nested[2]), astify(nested[3]))
-        elif type(nested[0]) != list:
+        elif type(nested[0]) != list and is_ident(nested[0]):
             return func_node(ident_node(nested[0]), [astify(arg) for arg in nested[1:]])
     else:
         if is_int(nested):
