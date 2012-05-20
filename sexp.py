@@ -301,7 +301,7 @@ def vtype(ast, funcstack, btypes={}, propagated_btypes=None):
     return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown node type'})
 
 def interpret(ast, funcstack, bindings={}):
-    print "ASTB", ast, bindings
+    #print "ASTB", ast, bindings
     if ast['ntype'] == Nodes.INVALID or ast['vtype'] == Types.INVALID:
         return ast
     elif ast['ntype'] in [Nodes.NUM, Nodes.BOOL]:
@@ -338,9 +338,28 @@ def interpret(ast, funcstack, bindings={}):
             return interpret(ast['falseexpr'], funcstack, bindings)
     raise Exception("Should handle all node types")
 
+def condexpand(ast, _):
+    if ast['ntype'] != Nodes.FUNC or ast['func']['value'] != 'cond':
+        return ast
+    else:
+        # example
+        # (cond ((zero? n) (idnum 1)) (* n (fact (- n 1))))
+        args = ast['args']
+        assert len(args) > 1
+        newast = args[-1]
+        for i in reversed(xrange(len(args)-1)):
+            test_expr, true_expr = args[i]['children']
+            newast = if_node(astify(test_expr), astify(true_expr), newast)
+        return newast
 
 PASSES = [
+    # passes on the untyped tree
+    # expand cond to ifs
+    ["COND", condexpand, matcher.ASTMatchers.astified],
+    # type the tree
     ["VTYPE", vtype, matcher.ASTMatchers.vtyped],
+    # passes on the typed tree
+    # final pass
     ["INTERPRET", interpret, matcher.ASTMatchers.interpreted],
 ]
 

@@ -24,7 +24,9 @@ class TestSexp(unittest.TestCase):
         ["(idbool #t)", [mbool(True)]],
         ["(idbool #f)", [mbool(False)]],
         ["(if (idbool #t) (idnum 3) (idnum 4))", [mnum(3)]],
-        ["(if (idbool #f) (idnum 3) (idnum 4))", [mnum(4)]]
+        ["(if (idbool #f) (idnum 3) (idnum 4))", [mnum(4)]],
+        ["(cond ((idbool #t) (idnum 1)) (idnum 2))", [mnum(1)]],
+        ["(cond ((idbool #f) (idnum 1)) (idnum 2))", [mnum(2)]]
     ]
 
     def test_cases(self):
