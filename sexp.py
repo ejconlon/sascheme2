@@ -93,6 +93,10 @@ def op_lte(args):
     return bool_node(args[0]['value'] <= args[1]['value'])
 def op_neq(args): 
     return bool_node(args[0]['value'] != args[1]['value'])
+def op_idnum(args):
+    return num_node(args[0]['value'])
+def op_idbool(args):
+    return bool_node(args[0]['value'])
 
 def nary(op, n, intype, outtype = None):
     if outtype is None: outtype = intype
@@ -114,7 +118,9 @@ BUILTINS = {
     'eq'  : nary(op_eq,  2, Types.NUM, Types.BOOL),
     'gte' : nary(op_gte, 2, Types.NUM, Types.BOOL),
     'lte' : nary(op_lte, 2, Types.NUM, Types.BOOL),
-    'neq' : nary(op_neq, 2, Types.NUM, Types.BOOL)
+    'neq' : nary(op_neq, 2, Types.NUM, Types.BOOL),
+    'idnum': nary(op_idnum, 1, Types.NUM),
+    'idbool': nary(op_idbool, 1, Types.BOOL)
 }
 
 def alias_builtin(a, b):
@@ -144,7 +150,7 @@ def is_blah(x, blah):
         return False
 
 def is_int(x): return is_blah(x, int)
-def is_bool(x): return x.lower() in ['true', 'false']
+def is_bool(x): return x == "#t" or x == "#f"
 def is_ident(x):
     return len(x) > 0 and not is_int(x) and not is_bool(x)
 
@@ -156,7 +162,7 @@ def astify(nested):
             assert type(nested[1]) == list
             bindings = []
             for binding in nested[1]:
-                print "BINDING", binding
+                #print "BINDING", binding
                 assert len(binding) == 2 
                 assert is_ident(binding[0])
                 bindings.append((ident_node(binding[0]), astify(binding[1])))                

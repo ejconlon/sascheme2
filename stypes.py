@@ -16,7 +16,7 @@ class Types:
 def num_node(value):
     return {'ntype': Nodes.NUM, 'value': int(value)}
 def bool_node(value):
-    return {'ntype': Nodes.BOOL, 'value': bool(value)}
+    return {'ntype': Nodes.BOOL, 'value': value == "#t" or value == True}
 def func_node(func, args):
     return {'ntype': Nodes.FUNC, 'func': func, 'args': args}
 def ident_node(value):
