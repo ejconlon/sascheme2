@@ -39,24 +39,25 @@ def nest_inner(tokens):
             next = tokens.next()
             #print "TOKEN", next
             if is_open(next):
-                child, tokens = nest_inner(tokens)
+                child, tokens, more = nest_inner(tokens)
                 cur.append(child)
             elif is_close(next):
-                return cur, tokens
+                return cur, tokens, True
             else:
                 cur.append(next)
         except StopIteration:
-            return cur, tokens
+            return cur, tokens, False
             
 def nest(tokens):
-    cur, tokens = nest_inner(tokens)
-    try:
-        next = tokens.next()
-        raise Exception("not a single sexp")
-    except StopIteration:
-        pass
-    assert len(cur) == 1
-    return cur[0]
+    while True:
+        try:
+            cur, tokens, more = nest_inner(tokens)
+            for c in cur:
+                yield c
+            if not more:
+                break
+        except StopIteration:
+            break
 
 class Nodes:
     NUM = 'NumNode'
@@ -216,11 +217,13 @@ def dappend(din, dout):
 class FuncStack(object):
     def __init__(self, builtins):
         self.builtins = builtins
-        self.scoped = []
+        self.scoped = [{}]
     def push(self):
         self.scoped.append({})
     def pop(self):
         self.scoped.pop()
+    def define(self, x, y):
+        self.scoped[-1][x] = y
     def depth(self):
         return len(self.scoped)
     def __getitem__(self, item):
@@ -232,25 +235,42 @@ class FuncStack(object):
         if item in self.builtins:
             return True
         for i in xrange(len(self.scoped)):
-            if item in self.scoped(i):
+            if item in self.scoped[i]:
                 return True
         return False
+    def __repr__(self):
+        return self.__str__()
+    def __str__(self):
+        return pformat({'builtins': '...', 'scoped': self.scoped})
 
 # return ast typed with 'vtype' (a new copy of it - use dappend)
 # btypes are the types of bound symbols in lets
-def vtype(ast, funcstack, btypes={}):
+# funcstack may be modified with top-level defs
+def vtype(ast, funcstack, btypes={}, propagated_btypes=None):
     #print "BTYPES", pformat(btypes)
     if ast['ntype'] == Nodes.NUM:
         return dappend(ast, {'vtype': Types.NUM})
     elif ast['ntype'] == Nodes.BOOL:
         return dappend(ast, {'vtype': Types.BOOL})
     elif ast['ntype'] == Nodes.FUNC:
-        args = [vtype(arg, funcstack, btypes) for arg in ast['args']]
-        intypes = [arg['vtype'] for arg in args]
-        print "FUNCNODE", pformat(ast)
         if ast['func']['value'] not in funcstack:
             return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown func' })
         funcdef = funcstack[ast['func']['value']]
+        # allow same-level defines in func args to allow for seq
+        funcstack.push()
+        args = []
+        for arg in ast['args']:
+            if propagated_btypes != None and arg['ntype'] == Nodes.IDENT and arg['value'] not in btypes:
+                vt = funcdef['intypes'][len(args)]
+                arg = dappend(arg, {'vtype': vt})
+                assert arg['value'] not in propagated_btypes or propagated_btypes[arg['value']] == vt
+                propagated_btypes[arg['value']] = vt
+            else:
+                arg = vtype(arg, funcstack, btypes)
+            args.append(arg)
+        funcstack.pop()
+        intypes = [arg['vtype'] for arg in args]
+        #print "FUNCNODE", pformat(ast)
         if intypes != funcdef['intypes']:
             return dappend(ast, {'vtype': Types.INVALID, 'error': 'type mismatch' })
         return dappend(ast, {'vtype': funcdef['outtype'], 'args': args})
@@ -260,42 +280,79 @@ def vtype(ast, funcstack, btypes={}):
         else:
             return dappend(ast, {'vtype': btypes[ast['value']]})
     elif ast['ntype'] == Nodes.LET:
-        newbtypes = btypes
+        newbtypes = dappend(btypes, {})
         for binding in ast['bindings']:
+            # do not allow effective defines in lets. create a new scope and pop it immediately
+            funcstack.push()
             vtyped = vtype(binding[1], funcstack, newbtypes)
+            funcstack.pop()
             newbtypes = dappend(newbtypes, {binding[0]['value']: vtyped['vtype']})
         expr = vtype(ast['expr'], funcstack, newbtypes)
         return dappend(ast, {'vtype': expr['vtype'], 'expr': expr})
     elif ast['ntype'] == Nodes.DEFINE:
-        pass  # TODO
-    return dappend(ast, {'vtype': Types.INVALID, 'error': 'unkown node type'})
+        vt = Types.VOID
+        if not propagated_btypes:
+            propagated_btypes = {}
+        typedexpr = vtype(ast['expr'], funcstack, btypes, propagated_btypes)
+        intypes = []
+        for param in ast['params']:
+            if param['value'] in propagated_btypes:
+                intypes.append(propagated_btypes[param['value']])
+            else:
+                intypes.append(Types.INVALID)
+                vt = Types.INVALID
+        outtype = typedexpr['vtype']
+        op = None
+        newast = dappend(ast, {'intypes': intypes, 'outtype': outtype, 'op': op, 'expr': typedexpr, 'vtype': vt})
+        funcstack.define(ast['func']['value'], newast) 
+        return newast
+    return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown node type'})
 
 def interpret(ast, funcstack, bindings={}):
+    print "ASTB", ast, bindings
     if ast['ntype'] == Nodes.INVALID or ast['vtype'] == Types.INVALID:
         return ast
     elif ast['ntype'] in [Nodes.NUM, Nodes.BOOL]:
         return ast
     elif ast['ntype'] == Nodes.IDENT:
-        for binding in bindings:
-            if ast['value'] == binding[0]['value']:
-                return binding[1]
+        return bindings[ast['value']]
     elif ast['ntype'] == Nodes.LET:
-        return interpret(ast['expr'], funcstack, dappend(bindings, ast['bindings']))
+        newbindings = dappend(bindings, {})
+        for bpair in ast['bindings']:
+            newbindings[bpair[0]['value']] = bpair[1]
+        return interpret(ast['expr'], funcstack, newbindings)
     elif ast['ntype'] == Nodes.FUNC:
         newargs = [interpret(arg, funcstack, bindings) for arg in ast['args']]
         funcdef = funcstack[ast['func']['value']]
         return funcdef['op'](newargs)
+    elif ast['ntype'] == Nodes.DEFINE:
+        funcdef = funcstack[ast['func']['value']]
+        def op(args):
+            newbindings = dappend(bindings, {})
+            for i in xrange(len(ast['params'])):
+                pname = ast['params'][i]['value']
+                arg = args[i]
+                newbindings[pname] = interpret(arg, funcstack, newbindings)
+            return interpret(ast['expr'], funcstack, newbindings)
+        funcdef['op'] = op
+        return ast
     raise Exception("Should handle all node types")
 
 def execute(prog_str):
     tokens = tokenize(prog_str)
-    nested = nest(tokens)
+    nested = list(nest(tokens))
     print "\nNESTED\n", pformat(nested)
-    ast = astify(nested)
-    print "\nAST\n", pformat(ast)
-    vtyped = vtype(ast, FuncStack(BUILTINS))
-    print "\nVTYPED\n", pformat(vtyped)
-    return interpret(vtyped, FuncStack(BUILTINS))
+    funcstack = FuncStack(BUILTINS)
+    for sexp in nested:
+        ast = astify(sexp)
+        print "\nAST\n", pformat(ast)
+        vtyped = vtype(ast, funcstack)
+        print "\nFS1\n", funcstack
+        print "\nVTYPED\n", pformat(vtyped)
+        interpreted = interpret(vtyped, funcstack)
+        print "\nFS2\n", funcstack
+        print "\nINTERPRETED\n", pformat(interpreted)
+        yield interpreted, funcstack
 
 if __name__ == "__main__":
     import sys
@@ -317,5 +374,6 @@ if __name__ == "__main__":
         sys.exit(-1)
 
     program = program.strip()
-    interpreted = execute(program)
-    print "\nINTERPRETED\n", pformat(interpreted)    
+    for interpreted, funcstack in execute(program):
+        pass
+
