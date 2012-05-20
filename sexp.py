@@ -125,7 +125,7 @@ def nary(op, n, intype, outtype = None):
     if outtype is None: outtype = intype
     return { 'intypes': [intype for i in xrange(n)], 'outtype': intype, 'op': op }
 
-FUNCDEFS = {
+BUILTINS = {
     'add' : nary(op_add, 2, Types.NUM),
     'sub' : nary(op_sub, 2, Types.NUM),
     'mul' : nary(op_mul, 2, Types.NUM),
@@ -144,24 +144,24 @@ FUNCDEFS = {
     'neq' : nary(op_neq, 2, Types.NUM, Types.BOOL)
 }
 
-def alias(a, b):
-    FUNCDEFS[a] = FUNCDEFS[b]
+def alias_builtin(a, b):
+    BUILTINS[a] = BUILTINS[b]
 
-alias('+', 'add')
-alias('-', 'sub')
-alias('*', 'mul')
-alias('/', 'div')
-alias('%', 'mod')
-alias('!', 'not')
-alias('&&', 'and')
-alias('||', 'or')
-alias('^', 'xor')
-alias('>', 'gt')
-alias('<', 'lt')
-alias('==', 'eq')
-alias('>=', 'gte')
-alias('<=', 'lte')
-alias('!=', 'neq')
+alias_builtin('+', 'add')
+alias_builtin('-', 'sub')
+alias_builtin('*', 'mul')
+alias_builtin('/', 'div')
+alias_builtin('%', 'mod')
+alias_builtin('!', 'not')
+alias_builtin('&&', 'and')
+alias_builtin('||', 'or')
+alias_builtin('^', 'xor')
+alias_builtin('>', 'gt')
+alias_builtin('<', 'lt')
+alias_builtin('==', 'eq')
+alias_builtin('>=', 'gte')
+alias_builtin('<=', 'lte')
+alias_builtin('!=', 'neq')
 
 def is_blah(x, blah):
     try:
@@ -213,21 +213,44 @@ def dappend(din, dout):
             dout[a] = b
     return dout
 
+class FuncStack(object):
+    def __init__(self, builtins):
+        self.builtins = builtins
+        self.scoped = []
+    def push(self):
+        self.scoped.append({})
+    def pop(self):
+        self.scoped.pop()
+    def depth(self):
+        return len(self.scoped)
+    def __getitem__(self, item):
+        for i in reversed(xrange(len(self.scoped))):
+            if item in self.scoped[i]:
+                return self.scoped[i][item]
+        return self.builtins[item]
+    def __contains__(self, item):
+        if item in self.builtins:
+            return True
+        for i in xrange(len(self.scoped)):
+            if item in self.scoped(i):
+                return True
+        return False
+
 # return ast typed with 'vtype' (a new copy of it - use dappend)
 # btypes are the types of bound symbols in lets
-def vtype(ast, funcdefs, btypes={}):
+def vtype(ast, funcstack, btypes={}):
     #print "BTYPES", pformat(btypes)
     if ast['ntype'] == Nodes.NUM:
         return dappend(ast, {'vtype': Types.NUM})
     elif ast['ntype'] == Nodes.BOOL:
         return dappend(ast, {'vtype': Types.BOOL})
     elif ast['ntype'] == Nodes.FUNC:
-        args = [vtype(arg, funcdefs, btypes) for arg in ast['args']]
+        args = [vtype(arg, funcstack, btypes) for arg in ast['args']]
         intypes = [arg['vtype'] for arg in args]
         print "FUNCNODE", pformat(ast)
-        if ast['func']['value'] not in funcdefs:
+        if ast['func']['value'] not in funcstack:
             return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown func' })
-        funcdef = funcdefs[ast['func']['value']]
+        funcdef = funcstack[ast['func']['value']]
         if intypes != funcdef['intypes']:
             return dappend(ast, {'vtype': Types.INVALID, 'error': 'type mismatch' })
         return dappend(ast, {'vtype': funcdef['outtype'], 'args': args})
@@ -239,15 +262,15 @@ def vtype(ast, funcdefs, btypes={}):
     elif ast['ntype'] == Nodes.LET:
         newbtypes = btypes
         for binding in ast['bindings']:
-            vtyped = vtype(binding[1], funcdefs, newbtypes)
+            vtyped = vtype(binding[1], funcstack, newbtypes)
             newbtypes = dappend(newbtypes, {binding[0]['value']: vtyped['vtype']})
-        expr = vtype(ast['expr'], funcdefs, newbtypes)
+        expr = vtype(ast['expr'], funcstack, newbtypes)
         return dappend(ast, {'vtype': expr['vtype'], 'expr': expr})
     elif ast['ntype'] == Nodes.DEFINE:
         pass  # TODO
     return dappend(ast, {'vtype': Types.INVALID, 'error': 'unkown node type'})
 
-def interpret(ast, funcdefs, bindings={}):
+def interpret(ast, funcstack, bindings={}):
     if ast['ntype'] == Nodes.INVALID or ast['vtype'] == Types.INVALID:
         return ast
     elif ast['ntype'] in [Nodes.NUM, Nodes.BOOL]:
@@ -257,10 +280,10 @@ def interpret(ast, funcdefs, bindings={}):
             if ast['value'] == binding[0]['value']:
                 return binding[1]
     elif ast['ntype'] == Nodes.LET:
-        return interpret(ast['expr'], funcdefs, dappend(bindings, ast['bindings']))
+        return interpret(ast['expr'], funcstack, dappend(bindings, ast['bindings']))
     elif ast['ntype'] == Nodes.FUNC:
-        newargs = [interpret(arg, funcdefs, bindings) for arg in ast['args']]
-        funcdef = funcdefs[ast['func']['value']]
+        newargs = [interpret(arg, funcstack, bindings) for arg in ast['args']]
+        funcdef = funcstack[ast['func']['value']]
         return funcdef['op'](newargs)
     raise Exception("Should handle all node types")
 
@@ -270,9 +293,9 @@ def execute(prog_str):
     print "\nNESTED\n", pformat(nested)
     ast = astify(nested)
     print "\nAST\n", pformat(ast)
-    vtyped = vtype(ast, FUNCDEFS)
+    vtyped = vtype(ast, FuncStack(BUILTINS))
     print "\nVTYPED\n", pformat(vtyped)
-    return interpret(vtyped, FUNCDEFS)
+    return interpret(vtyped, FuncStack(BUILTINS))
 
 if __name__ == "__main__":
     import sys
