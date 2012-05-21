@@ -285,31 +285,38 @@ def vtype(ast, funcstack, btypes=None, propagated_btypes=None, propagated_templa
                             parts[i][1] = template_assignment[parts[i][0]]['etypes']
                     prop_ta = type_node(Types.join_T((x[1] for x in parts)))
                 arg = vtype(arg, funcstack, btypes, propagated_template_assignment=prop_ta)
-                print "POST ARG VTYPE", is_t, arg, list(template_assignment.keys())
                 if is_t:
                     et = dvt['etypes']
                     if et not in template_assignment:
                         template_assignment[et] = arg['vtype']
                     if arg['vtype'] != template_assignment[et]:
-                        print "FUCKED", def_et[i], template_assignment[def_et[i]]
                         return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 't type mismatch' })
-                    
+                    # Check template assignment parts for contradictions
+                    for k, v in template_assignment.iteritems():
+                        k_parts = Types.split_T(k)
+                        v_parts = Types.split_T(v['etypes'])
+                        assert len(k_parts) == len(v_parts)
+                        for i in xrange(len(k_parts)):
+                            if Types.is_T(k_parts[i]):
+                                if k_parts[i] in template_assignment and v_parts[i] != template_assignment[k_parts[i]]['etypes']:
+                                    return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'sub t type mismatch' })
                 elif arg['vtype'] != dvt:
                     return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'non-t type mismatch' })
             args.append(arg)
         funcstack.pop()
 
         if Types.node_is_T(funcdef['outtype']):
-            if propagated_template_assignment is not None:
-                return dappend(ast, {'vtype': propagated_template_assignment, 'args': args})
-
             ot = funcdef['outtype']['etypes']
             parts = [[x, x] for x in Types.split_T(ot)]
             for i in xrange(len(parts)):
                 if parts[i][0] in template_assignment:
                     parts[i][1] = template_assignment[parts[i][0]]['etypes']
                 elif Types.is_T(parts[i][0]):
-                    return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'unassignable template: '+parts[i][0] })
+                    # Got an unassigned template part.  Use the propagated assignment if present, otherwise error
+                    if propagated_template_assignment is not None:
+                        return dappend(ast, {'vtype': propagated_template_assignment, 'args': args})                        
+                    else:
+                        return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'unassignable template: '+parts[i][0] })
             ta = type_node(Types.join_T((x[1] for x in parts)))
             return dappend(ast, {'vtype': ta, 'args': args})                
         else:
