@@ -46,6 +46,7 @@ class ASTMatchers:
     let = ~primitive & equals_('ntype', stypes.Nodes.LET) & all_('bindings', lambda o, d: ident.matches(o[0], d+1) and ntyped.matches(o[1], d+1)) and matches_('expr', ntyped)
     define = ~primitive & equals_('ntype', stypes.Nodes.DEFINE) & all_('params', ident) & matches_('func', ident) & matches_('expr', ntyped)
     mif = ~primitive & equals_('ntype', stypes.Nodes.IF) & matches_('testexpr', ntyped) & matches_('trueexpr', ntyped) & matches_('falseexpr', ntyped)
+    mlist = ~primitive & equals_('ntype', stypes.Nodes.LIST) & has_('next') & has_('current')
     invalid_base = has_('error') & typed_('error', str)
     invalid_ntype = invalid_base & equals_('ntype', stypes.Nodes.INVALID) 
     invalid_vtype = invalid_base & equals_('vtype', stypes.type_node(stypes.Types.INVALID))
@@ -54,8 +55,8 @@ class ASTMatchers:
     vtyped_basic = has_('vtype') and matches_('vtype', ntyped) and matches_('vtype', Matcher('etypes', lambda o, d: len(o['etypes']) > 0))
 
     # pass matchers
-    astified = num | mbool | ident | func | let | define | mif
+    astified = num | mbool | ident | func | let | define | mif | mlist
     vtyped = astified & vtyped_basic
-    interpreted = vtyped & (invalid | primitive | void)
+    interpreted = vtyped & (invalid | primitive | void | mlist)
 
 

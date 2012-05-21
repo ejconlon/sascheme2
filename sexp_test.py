@@ -29,7 +29,12 @@ class TestSexp(unittest.TestCase):
         ["(cond (#t 1) 2)", [mnum(1)]],
         ["(cond (#f 1) 2)", [mnum(2)]],
         ["(id 3)", [mnum(3)]],
-        ["(+ (id 3) 4)", [mnum(7)]]
+        ["(+ (id 3) 4)", [mnum(7)]],
+        ["(nil)", [M.invalid & matcher.equals_('error', 'unassignable template: T_1')]],
+        ["(cons 1 (nil))", [~M.invalid & M.mlist]],
+        ["(sum (cons 1 (cons 2 (nil))))", [mnum(3)]],
+        ["(cons #t (cons #f (nil)))", [~M.invalid & M.mlist]]
+        #["(cons #t (cons 1 (nil)))", [M.invalid]]
     ]
 
     def test_cases(self):

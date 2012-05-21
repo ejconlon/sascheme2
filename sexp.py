@@ -103,6 +103,17 @@ def op_id(args):
         return bool_node(args[0]['value'])
     else:
         return num_node(args[0]['value'])
+def op_nil(args):
+    return list_node(None, None)
+def op_cons(args):
+    return list_node(args[0], args[1])
+def op_sum(args):
+    s = 0
+    a = args[0]
+    while a['current'] is not None:
+        s += a['current']['value']
+        a = a['next']
+    return num_node(s)
 
 def nary(op, n, intype, outtype = None):
     if outtype is None: outtype = intype
@@ -127,9 +138,12 @@ BUILTINS = {
     'neq' : nary(op_neq, 2, Types.NUM, Types.BOOL),
     'idnum': nary(op_idnum, 1, Types.NUM),
     'idbool': nary(op_idbool, 1, Types.BOOL),
-    'id': nary(op_id, 1, Types.T(1))
-    #'cons': { 'op': op_cons, 'outtype': type_node(Types.LIST, Types.T(1)),
-    #          'intypes': [] }
+    'id': nary(op_id, 1, Types.T(1)),
+    'nil': nary(op_nil, 0, Types.T(1)),
+    'cons': { 'op': op_cons, 'outtype': type_node(Types.LIST, Types.T(1)),
+              'intypes': [type_node(Types.T(1)), type_node(Types.LIST, Types.T(1))] },
+    'sum': { 'op': op_sum, 'outtype': type_node(Types.NUM),
+             'intypes': [type_node(Types.LIST, Types.NUM)] }
 }
 
 def alias_builtin(a, b):
@@ -236,7 +250,8 @@ class FuncStack(object):
 # return ast typed with 'vtype' (a new copy of it - use dappend)
 # btypes are the types of bound symbols in lets
 # funcstack may be modified with top-level defs
-def vtype(ast, funcstack, btypes={}, template_id=[0], propagated_btypes=None):
+def vtype(ast, funcstack, btypes=None, propagated_btypes=None, propagated_template_assignment=None):
+    if btypes is None: btypes = {}
     #print "BTYPES", pformat(btypes)
     if ast['ntype'] == Nodes.NUM:
         return dappend(ast, {'vtype': type_node(Types.NUM)})
@@ -246,46 +261,57 @@ def vtype(ast, funcstack, btypes={}, template_id=[0], propagated_btypes=None):
         if ast['func']['value'] not in funcstack:
             return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'unknown func' })
         funcdef = funcstack[ast['func']['value']]
+        if len(ast['args']) != len(funcdef['intypes']):
+            return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'arity mismatch' })
+
         # allow same-level defines in func args to allow for seq
         funcstack.push()
         args = []
+        template_assignment = {}
         for arg in ast['args']:
+            dvt = funcdef['intypes'][len(args)]
             if propagated_btypes != None and arg['ntype'] == Nodes.IDENT and arg['value'] not in btypes:
-                vt = funcdef['intypes'][len(args)]
-                arg = dappend(arg, {'vtype': vt})
-                assert arg['value'] not in propagated_btypes or propagated_btypes[arg['value']] == vt
-                propagated_btypes[arg['value']] = vt
+                arg = dappend(arg, {'vtype': dvt})
+                assert arg['value'] not in propagated_btypes or propagated_btypes[arg['value']] == dvt
+                propagated_btypes[arg['value']] = dvt
             else:
-                arg = vtype(arg, funcstack, template_id, btypes)
+                is_t = Types.node_is_T(dvt)
+                prop_ta = None
+                if is_t:
+                    et = dvt['etypes']
+                    parts = [[x, x] for x in Types.split_T(et)]
+                    for i in xrange(len(parts)):
+                        if parts[i][0] in template_assignment:
+                            parts[i][1] = template_assignment[parts[i][0]]['etypes']
+                    prop_ta = type_node(Types.join_T((x[1] for x in parts)))
+                arg = vtype(arg, funcstack, btypes, propagated_template_assignment=prop_ta)
+                print "POST ARG VTYPE", is_t, arg, list(template_assignment.keys())
+                if is_t:
+                    et = dvt['etypes']
+                    if et not in template_assignment:
+                        template_assignment[et] = arg['vtype']
+                    if arg['vtype'] != template_assignment[et]:
+                        print "FUCKED", def_et[i], template_assignment[def_et[i]]
+                        return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 't type mismatch' })
+                    
+                elif arg['vtype'] != dvt:
+                    return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'non-t type mismatch' })
             args.append(arg)
         funcstack.pop()
-        intypes = [arg['vtype'] for arg in args]
-        if len(intypes) != len(funcdef['intypes']):
-            return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'arity mismatch' })
-        template_assignment = {}
-        for i in xrange(len(intypes)):
-            a = intypes[i]
-            b = funcdef['intypes'][i]
-            is_t = Types.node_is_T(b)
-            if a == b:
-                continue
-            elif not is_t:
-                return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'type mismatch' })
-            else:
-                et = b['etypes'][0]
-                if et in template_assignment:
-                    if a != template_assignment[et]:
-                        return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'type mismatch' })
-                    else:
-                        continue
-                else:
-                    template_assignment[et] = a
+
         if Types.node_is_T(funcdef['outtype']):
-            ot = funcdef['outtype']['etypes'][0]
-            if ot in template_assignment:
-                return dappend(ast, {'vtype': template_assignment[ot], 'args': args})                
-            else:
-                return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'unassignable template' })
+            if propagated_template_assignment is not None:
+                return dappend(ast, {'vtype': propagated_template_assignment, 'args': args})
+
+            ot = funcdef['outtype']['etypes']
+            parts = [[x, x] for x in Types.split_T(ot)]
+            for i in xrange(len(parts)):
+                if parts[i][0] in template_assignment:
+                    parts[i][1] = template_assignment[parts[i][0]]['etypes']
+                elif Types.is_T(parts[i][0]):
+                    return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'unassignable template: '+parts[i][0] })
+            ta = type_node(Types.join_T((x[1] for x in parts)))
+            return dappend(ast, {'vtype': ta, 'args': args})                
         else:
             return dappend(ast, {'vtype': funcdef['outtype'], 'args': args})                
     elif ast['ntype'] == Nodes.IDENT:
@@ -298,16 +324,16 @@ def vtype(ast, funcstack, btypes={}, template_id=[0], propagated_btypes=None):
         for binding in ast['bindings']:
             # do not allow effective defines in lets. create a new scope and pop it immediately
             funcstack.push()
-            vtyped = vtype(binding[1], funcstack, template_id, newbtypes)
+            vtyped = vtype(binding[1], funcstack, newbtypes)
             funcstack.pop()
             newbtypes = dappend(newbtypes, {binding[0]['value']: vtyped['vtype']})
-        expr = vtype(ast['expr'], funcstack, template_id, newbtypes)
+        expr = vtype(ast['expr'], funcstack, newbtypes)
         return dappend(ast, {'vtype': expr['vtype'], 'expr': expr})
     elif ast['ntype'] == Nodes.DEFINE:
         vt = Types.VOID
         if not propagated_btypes:
             propagated_btypes = {}
-        typedexpr = vtype(ast['expr'], funcstack, template_id, btypes, propagated_btypes)
+        typedexpr = vtype(ast['expr'], funcstack, btypes, propagated_btypes)
         intypes = []
         for param in ast['params']:
             if param['value'] in propagated_btypes:
@@ -321,9 +347,9 @@ def vtype(ast, funcstack, btypes={}, template_id=[0], propagated_btypes=None):
         funcstack.define(ast['func']['value'], newast) 
         return newast
     elif ast['ntype'] == Nodes.IF:
-        typedtest  = vtype(ast['testexpr'], funcstack, template_id, btypes)
-        typedtrue  = vtype(ast['trueexpr'], funcstack, template_id, btypes)
-        typedfalse = vtype(ast['falseexpr'], funcstack, template_id, btypes)
+        typedtest  = vtype(ast['testexpr'], funcstack, btypes)
+        typedtrue  = vtype(ast['trueexpr'], funcstack, btypes)
+        typedfalse = vtype(ast['falseexpr'], funcstack, btypes)
         if typedtest['vtype'] != type_node(Types.BOOL):
             return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'test not boolean', 'testexpr': typedtest, 'trueexpr': typedtrue, 'falseexpr': typedfalse})
         elif typedtrue['vtype'] != typedfalse['vtype']:
@@ -349,7 +375,7 @@ def interpret(ast, funcstack, bindings={}):
         newargs = [interpret(arg, funcstack, bindings) for arg in ast['args']]
         funcdef = funcstack[ast['func']['value']]
         newast = funcdef['op'](newargs)
-        newast['vtype'] = funcdef['outtype']
+        newast['vtype'] = ast['vtype']
         return newast
     elif ast['ntype'] == Nodes.DEFINE:
         funcdef = funcstack[ast['func']['value']]
