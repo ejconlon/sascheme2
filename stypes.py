@@ -7,13 +7,17 @@ class Nodes:
     IF = 'IfNode'
     FUNC = 'FuncNode'
     INVALID = 'InvalidNode'
+    TYPE = 'TypeNode'
 
 class Types:
     NUM = 'NumType'
     BOOL = 'BoolType'
+    LIST = 'ListType'
     VOID = 'VoidType'
     INVALID = 'InvalidType'
 
+def type_node(*etypes):
+    return {'ntype': Nodes.TYPE, 'etypes': etypes }
 def num_node(value):
     return {'ntype': Nodes.NUM, 'value': int(value)}
 def bool_node(value):

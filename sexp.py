@@ -100,7 +100,7 @@ def op_idbool(args):
 
 def nary(op, n, intype, outtype = None):
     if outtype is None: outtype = intype
-    return { 'intypes': [intype for i in xrange(n)], 'outtype': intype, 'op': op }
+    return { 'intypes': [type_node(intype) for i in xrange(n)], 'outtype': type_node(outtype), 'op': op }
 
 BUILTINS = {
     'add' : nary(op_add, 2, Types.NUM),
@@ -230,12 +230,12 @@ class FuncStack(object):
 def vtype(ast, funcstack, btypes={}, propagated_btypes=None):
     #print "BTYPES", pformat(btypes)
     if ast['ntype'] == Nodes.NUM:
-        return dappend(ast, {'vtype': Types.NUM})
+        return dappend(ast, {'vtype': type_node(Types.NUM)})
     elif ast['ntype'] == Nodes.BOOL:
-        return dappend(ast, {'vtype': Types.BOOL})
+        return dappend(ast, {'vtype': type_node(Types.BOOL)})
     elif ast['ntype'] == Nodes.FUNC:
         if ast['func']['value'] not in funcstack:
-            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown func' })
+            return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'unknown func' })
         funcdef = funcstack[ast['func']['value']]
         # allow same-level defines in func args to allow for seq
         funcstack.push()
@@ -253,11 +253,11 @@ def vtype(ast, funcstack, btypes={}, propagated_btypes=None):
         intypes = [arg['vtype'] for arg in args]
         #print "FUNCNODE", pformat(ast)
         if intypes != funcdef['intypes']:
-            return dappend(ast, {'vtype': Types.INVALID, 'error': 'type mismatch' })
+            return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'type mismatch' })
         return dappend(ast, {'vtype': funcdef['outtype'], 'args': args})
     elif ast['ntype'] == Nodes.IDENT:
         if ast['value'] not in btypes:
-            return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown identifier'})
+            return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'unknown identifier'})
         else:
             return dappend(ast, {'vtype': btypes[ast['value']]})
     elif ast['ntype'] == Nodes.LET:
@@ -284,20 +284,20 @@ def vtype(ast, funcstack, btypes={}, propagated_btypes=None):
                 vt = Types.INVALID
         outtype = typedexpr['vtype']
         op = None
-        newast = dappend(ast, {'intypes': intypes, 'outtype': outtype, 'op': op, 'expr': typedexpr, 'vtype': vt})
+        newast = dappend(ast, {'intypes': intypes, 'outtype': outtype, 'op': op, 'expr': typedexpr, 'vtype': type_node(vt)})
         funcstack.define(ast['func']['value'], newast) 
         return newast
     elif ast['ntype'] == Nodes.IF:
         typedtest  = vtype(ast['testexpr'], funcstack, btypes)
         typedtrue  = vtype(ast['trueexpr'], funcstack, btypes)
         typedfalse = vtype(ast['falseexpr'], funcstack, btypes)
-        if typedtest['vtype'] != Types.BOOL:
-            return dappend(ast, {'vtype': Types.INVALID, 'error': 'test not boolean', 'testexpr': typedtest, 'trueexpr': typedtrue, 'falseexpr': typedfalse})
+        if typedtest['vtype'] != type_node(Types.BOOL):
+            return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'test not boolean', 'testexpr': typedtest, 'trueexpr': typedtrue, 'falseexpr': typedfalse})
         elif typedtrue['vtype'] != typedfalse['vtype']:
-            return dappend(ast, {'vtype': Types.INVALID, 'error': 'test not boolean', 'testexpr': typedtest, 'trueexpr': typedtrue, 'falseexpr': typedfalse})
+            return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'test not boolean', 'testexpr': typedtest, 'trueexpr': typedtrue, 'falseexpr': typedfalse})
         else:
             return dappend(ast, {'vtype': typedtrue['vtype'], 'testexpr': typedtest, 'trueexpr': typedtrue, 'falseexpr': typedfalse})
-    return dappend(ast, {'vtype': Types.INVALID, 'error': 'unknown node type'})
+    return dappend(ast, {'vtype': type_node(Types.INVALID), 'error': 'unknown node type'})
 
 def interpret(ast, funcstack, bindings={}):
     #print "ASTB", ast, bindings
@@ -370,7 +370,7 @@ def execute(prog_str):
     for sexp in nested:
         ast = astify(sexp)
         print "INITIAL", pformat(ast)
-        matched = matcher.ASTMatchers.astified.matches(ast)
+        matched = matcher.ASTMatchers.astified.matches(ast, 0)
         print "MATCHED?", matched
         assert matched
         for p in PASSES:
@@ -378,7 +378,7 @@ def execute(prog_str):
             print "STARTING", name
             ast = func(ast, funcstack)
             print "FINISHED", name, pformat(ast)
-            matched = m.matches(ast)
+            matched = m.matches(ast, 0)
             print "MATCHED?", matched
             assert matched
         yield ast, funcstack
