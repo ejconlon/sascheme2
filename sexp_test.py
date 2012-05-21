@@ -27,7 +27,9 @@ class TestSexp(unittest.TestCase):
         ["(if #f 3 4)", [mnum(4)]],
         ["(cond (#t 1) 2)", [mnum(1)]],
         ["(cond (#t 1) 2)", [mnum(1)]],
-        ["(cond (#f 1) 2)", [mnum(2)]]
+        ["(cond (#f 1) 2)", [mnum(2)]],
+        ["(id 3)", [mnum(3)]],
+        ["(+ (id 3) 4)", [mnum(7)]]
     ]
 
     def test_cases(self):

@@ -15,6 +15,11 @@ class Types:
     LIST = 'ListType'
     VOID = 'VoidType'
     INVALID = 'InvalidType'
+    @classmethod
+    def T(cls, x): return 'T_'+str(x)
+    @classmethod
+    def node_is_T(cls, tx):
+        return 'etypes' in tx and len(tx['etypes']) == 1 and tx['etypes'][0].startswith('T_')
 
 def type_node(*etypes):
     return {'ntype': Nodes.TYPE, 'etypes': etypes }
@@ -34,4 +39,3 @@ def define_node(func, params, expr):
     return {'ntype': Nodes.DEFINE, 'func': func, 'params': params, 'expr': expr}
 def if_node(testexpr, trueexpr, falseexpr):
     return {'ntype': Nodes.IF, 'testexpr': testexpr, 'trueexpr': trueexpr, 'falseexpr': falseexpr}
-
